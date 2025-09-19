@@ -1,9 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(const TukaApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const TukaApp());
+}
 
 class AppTheme {
   static const bgTop = Color(0xFF420909);
@@ -28,9 +35,8 @@ class AppTheme {
       brightness: Brightness.dark,
     ),
     useMaterial3: true,
-    textTheme: GoogleFonts.alumniSansTextTheme(
-      ThemeData(brightness: Brightness.dark).textTheme,
-    ),
+    textTheme:
+    GoogleFonts.alumniSansTextTheme(ThemeData(brightness: Brightness.dark).textTheme),
   );
 }
 
@@ -41,8 +47,7 @@ class RectThumbShape extends SliderComponentShape {
   const RectThumbShape({this.thumbWidth = 6, this.thumbHeight = 18});
 
   @override
-  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
-      Size(thumbWidth, thumbHeight);
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => Size(thumbWidth, thumbHeight);
 
   @override
   void paint(
@@ -61,8 +66,7 @@ class RectThumbShape extends SliderComponentShape {
       }) {
     final canvas = context.canvas;
     final paint = Paint()..color = sliderTheme.thumbColor ?? Colors.white;
-    final rect =
-    Rect.fromCenter(center: center, width: thumbWidth, height: thumbHeight);
+    final rect = Rect.fromCenter(center: center, width: thumbWidth, height: thumbHeight);
     canvas.drawRect(rect, paint);
   }
 }
@@ -108,8 +112,7 @@ class RectSliderTrackShape extends SliderTrackShape {
     );
 
     final active = Paint()..color = sliderTheme.activeTrackColor ?? Colors.white;
-    final inactive =
-    Paint()..color = sliderTheme.inactiveTrackColor ?? Colors.grey;
+    final inactive = Paint()..color = sliderTheme.inactiveTrackColor ?? Colors.grey;
 
     final left = textDirection == TextDirection.ltr
         ? Rect.fromLTRB(rect.left, rect.top, thumbCenter.dx, rect.bottom)
@@ -129,9 +132,9 @@ class PressableSquare extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
   final Color color;
-  final double darkenAmount; // 0..1
-  final Duration releaseDuration; // анимация «отпуска»
-  final Duration flashDuration; // флэш для быстрых тапов
+  final double darkenAmount;
+  final Duration releaseDuration;
+  final Duration flashDuration;
   final BorderRadius? borderRadius;
 
   const PressableSquare({
@@ -208,6 +211,19 @@ class TukaApp extends StatelessWidget {
   }
 }
 
+class Track {
+  final String title;
+  final String artist;
+  final String coverAsset;
+  final String audioAsset;
+  const Track({
+    required this.title,
+    required this.artist,
+    required this.coverAsset,
+    required this.audioAsset,
+  });
+}
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
   @override
@@ -215,28 +231,216 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
+  final AudioPlayer _player = AudioPlayer();
+
+  final List<Track> tracks = const [
+    Track(
+      title: 'Double Цвет',
+      artist: 'Tuka',
+      coverAsset: 'assets/covers/draka.png',
+      audioAsset: 'assets/audio/dablcvet_8.mp3',
+    ),
+    Track(
+      title: 'Nota de Amor',
+      artist: 'Tuka',
+      coverAsset: 'assets/covers/nota.jpg',
+      audioAsset: 'assets/audio/gala_10.mp3',
+    ),
+    Track(
+      title: 'Улетим',
+      artist: 'Tuka',
+      coverAsset: 'assets/covers/fly.jpg',
+      audioAsset: 'assets/audio/fly_3.mp3',
+    ),
+    Track(
+      title: 'VVS',
+      artist: 'Tuka',
+      coverAsset: 'assets/covers/third.jpg',
+      audioAsset: 'assets/audio/diamonds_9.mp3',
+    ),
+  ];
+
+  ConcatenatingAudioSource? _playlist;
+
   bool liked = false;
   bool playing = false;
-  double pos = 33;
-  final double total = 151;
 
-  // выбранная нижняя иконка: 0=home, 1=search, 2=messages, 3=profile
+  double pos = 0;
+  double total = 0;
+
+  double? _dragPos;
+  bool _isDragging = false;
+  Timer? _seekDebounce;
+
   int bottomSelected = 0;
 
   Color dominant = AppTheme.bgTop;
-  static const String coverPath = 'assets/draka.png';
+
+  bool burgerPressed = false;
+
+  bool _holdingPrev = false;
+  bool _holdingNext = false;
+
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAudio();
+    _loadLike();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _updatePalette();
+    _updatePaletteForIndex(_index);
   }
 
-  Future<void> _updatePalette() async {
+  Future<void> _initAudio() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+
+    _playlist = ConcatenatingAudioSource(
+      children: [for (final t in tracks) AudioSource.asset(t.audioAsset)],
+    );
+
+    final initialDur = await _player.setAudioSource(_playlist!);
+    if (mounted && initialDur != null) {
+      setState(() => total = initialDur.inSeconds.toDouble());
+    }
+
+    // Автоповтор всего списка (круговой плейлист сам по себе)
+    await _player.setLoopMode(LoopMode.all);
+
+    _player.durationStream.listen((d) {
+      if (!mounted) return;
+      if (d == null) return;
+      setState(() => total = d.inSeconds.toDouble());
+    });
+
+    _player.positionStream.listen((p) {
+      if (!mounted || _isDragging) return;
+      final secs = p.inSeconds.toDouble();
+      setState(() => pos = total > 0 ? secs.clamp(0, total) : secs);
+    });
+
+    _player.playerStateStream.listen((st) {
+      if (!mounted) return;
+      final isDone = st.processingState == ProcessingState.completed;
+      setState(() => playing = st.playing && !isDone);
+    });
+
+    _player.currentIndexStream.listen((i) async {
+      if (!mounted || i == null) return;
+      setState(() {
+        _index = i;
+        pos = 0;
+        total = 0;
+      });
+      _updatePaletteForIndex(i);
+      _loadLikeForIndex(i);
+      _fixDurationForCurrent();
+    });
+  }
+
+  Future<void> _fixDurationForCurrent() async {
+    final d0 = _player.duration;
+    if (mounted && d0 != null) {
+      setState(() => total = d0.inSeconds.toDouble());
+      return;
+    }
+    for (int tries = 0; tries < 8; tries++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      final d = _player.duration;
+      if (!mounted) return;
+      if (d != null) {
+        setState(() => total = d.inSeconds.toDouble());
+        return;
+      }
+    }
+  }
+
+  // ===== likes =====
+  Future<void> _loadLike() async => _loadLikeForIndex(_index);
+
+  Future<void> _loadLikeForIndex(int i) async {
+    final sp = await SharedPreferences.getInstance();
+    setState(() => liked = sp.getBool('liked_${tracks[i].title}') ?? false);
+  }
+
+  Future<void> _saveLike(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool('liked_${tracks[_index].title}', v);
+  }
+
+  // ===== playback =====
+  Future<void> _togglePlay() async {
+    if (_player.playing) {
+      await _player.pause();
+    } else {
+      await _player.play();
+    }
+  }
+
+  void _seekBy(Duration delta) {
+    final now = _player.position + delta;
+    final maxD = Duration(seconds: total.toInt());
+    final target = now < Duration.zero ? Duration.zero : (now > maxD ? maxD : now);
+    _player.seek(target);
+  }
+
+  // ЦИКЛИЧЕСКИЙ prev/next
+  Future<void> _prevTrack() async {
+    final i = _player.currentIndex;
+    final count = tracks.length;
+    if (i == null || count == 0) return;
+    final prev = (i - 1 + count) % count;
+    await _player.seek(Duration.zero, index: prev);
+    await _player.play();
+  }
+
+  Future<void> _nextTrack() async {
+    final i = _player.currentIndex;
+    final count = tracks.length;
+    if (i == null || count == 0) return;
+    final next = (i + 1) % count;
+    await _player.seek(Duration.zero, index: next);
+    await _player.play();
+  }
+
+  // мелкая перемотка при удержании prev/next
+  void _startHoldSeek({required bool forward}) async {
+    if (forward) {
+      _holdingNext = true;
+    } else {
+      _holdingPrev = true;
+    }
+    while ((forward && _holdingNext) || (!forward && _holdingPrev)) {
+      _seekBy(Duration(seconds: forward ? 5 : -5));
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+  }
+
+  void _stopHoldSeek() {
+    _holdingNext = false;
+    _holdingPrev = false;
+  }
+
+  // ===== slider debounced seek =====
+  void _seekDebounced(Duration target) {
+    _seekDebounce?.cancel();
+    _seekDebounce = Timer(const Duration(milliseconds: 250), () {
+      _player.seek(target);
+    });
+  }
+
+  // ===== visuals =====
+  Future<void> _updatePaletteForIndex(int i) async {
     try {
-      await precacheImage(const AssetImage(coverPath), context);
+      final cover = tracks[i].coverAsset;
+      await precacheImage(AssetImage(cover), context);
       final palette = await PaletteGenerator.fromImageProvider(
-        const ResizeImage(AssetImage(coverPath), width: 200),
+        ResizeImage(AssetImage(cover), width: 200),
         maximumColorCount: 20,
       );
 
@@ -265,31 +469,40 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   @override
+  void dispose() {
+    _seekDebounce?.cancel();
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final gradientTop = lighten(dominant, 0.15);
+    final track = tracks[_index];
+
     return Scaffold(
       body: Stack(
         children: [
-          // фон + основной контент
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [lighten(dominant, 0.15), Colors.black],
+                  colors: [gradientTop, Colors.black],
                   stops: const [0.0, 0.8],
                 ),
               ),
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
               child: Column(
                 children: [
-                  // ======= ВЕРХНИЙ КОНТЕНТ (скролл выключен) =======
+                  // верх
                   Expanded(
                     child: ListView(
                       physics: const NeverScrollableScrollPhysics(),
                       primary: false,
                       children: [
-                        // Поиск
+                        // поиск
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: TextField(
@@ -306,17 +519,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 fontSize: 24,
                                 fontWeight: FontWeight.w500,
                               ),
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                color: Colors.white,
-                                size: 28,
-                              ),
+                              prefixIcon: const Icon(Icons.search, color: Colors.white, size: 28),
                               filled: true,
                               fillColor: const Color.fromRGBO(20, 20, 20, 0.3),
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 0,
-                                horizontal: 16,
-                              ),
+                              contentPadding:
+                              const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -329,39 +536,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           ),
                         ),
 
-                        // Обложка
+                        // обложка с двойным тапом (±10с)
                         Padding(
                           padding: const EdgeInsets.only(top: 15),
                           child: FractionallySizedBox(
                             widthFactor: 0.9,
                             child: AspectRatio(
                               aspectRatio: 1,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.5),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 0),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Image.asset(
-                                    coverPath,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (ctx, err, st) => Container(
-                                      color: Colors.white12,
-                                      alignment: Alignment.center,
-                                      child: const Text(
-                                        'Нет изображения\nassets/cover.jpg',
-                                        textAlign: TextAlign.center,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final boxW = constraints.maxWidth;
+                                  return GestureDetector(
+                                    onDoubleTapDown: (details) {
+                                      final x = details.localPosition.dx;
+                                      if (x < boxW / 2) {
+                                        _seekBy(const Duration(seconds: -10));
+                                      } else {
+                                        _seekBy(const Duration(seconds: 10));
+                                      }
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.5),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 0),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Image.asset(
+                                          track.coverAsset,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (ctx, err, st) => Container(
+                                            color: Colors.white12,
+                                            alignment: Alignment.center,
+                                            child: const Text(
+                                              'Нет изображения',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -369,7 +591,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
                         const SizedBox(height: 16),
 
-                        // Название / артист / лайк (как было)
+                        // название / артист / лайк
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
@@ -379,12 +601,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 children: [
                                   Transform.translate(
                                     offset: const Offset(20, -10),
-                                    child: Text('Double Цвет', style: AppTheme.title()),
+                                    child: Text(track.title, style: AppTheme.title()),
                                   ),
                                   const SizedBox(height: 4),
                                   Transform.translate(
-                                    offset: const Offset(20, -30),
-                                    child: Text('Tuka', style: AppTheme.artist()),
+                                    offset: const Offset(22, -30),
+                                    child: Text(track.artist, style: AppTheme.artist()),
                                   ),
                                 ],
                               ),
@@ -393,7 +615,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               offset: const Offset(-10, -20),
                               child: IconButton(
                                 iconSize: 36,
-                                onPressed: () => setState(() => liked = !liked),
+                                onPressed: () async {
+                                  final v = !liked;
+                                  setState(() => liked = v);
+                                  await _saveLike(v);
+                                },
                                 icon: Icon(liked ? Icons.favorite : Icons.favorite_border),
                                 color: liked ? AppTheme.accent : AppTheme.textPri,
                               ),
@@ -401,13 +627,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           ],
                         ),
 
-                        // ======= ТАЙМЛАЙН + КНОПКИ (кнопки подняты, кликаются целиком) =======
+                        // таймлайн + кнопки
                         SizedBox(
                           height: 210,
                           child: Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              // Таймлайн + таймкоды — оставлены на месте
+                              // слайдер + тайминги
                               Positioned(
                                 top: 0,
                                 left: 0,
@@ -432,10 +658,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                             overlayShape: SliderComponentShape.noOverlay,
                                           ),
                                           child: Slider(
-                                            value: pos,
+                                            value: ((_dragPos ?? pos).isFinite
+                                                ? (_dragPos ?? pos)
+                                                : 0.0)
+                                                .clamp(0.0, total > 0 ? total : 1.0),
                                             min: 0,
-                                            max: total,
-                                            onChanged: (v) => setState(() => pos = v),
+                                            max: total > 0 ? total : 1,
+                                            onChangeStart: (_) {
+                                              _isDragging = true;
+                                              _dragPos = pos;
+                                              setState(() {});
+                                            },
+                                            onChanged: total > 0
+                                                ? (v) {
+                                              final clamped = v.clamp(0.0, total);
+                                              setState(() => _dragPos = clamped);
+                                              _seekDebounced(
+                                                  Duration(seconds: clamped.round()));
+                                            }
+                                                : null,
+                                            onChangeEnd: (v) {
+                                              _seekDebounce?.cancel();
+                                              final clamped = v.clamp(0.0, total);
+                                              _player.seek(Duration(seconds: clamped.round()));
+                                              _dragPos = null;
+                                              _isDragging = false;
+                                            },
                                           ),
                                         ),
                                       ),
@@ -468,36 +716,47 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ),
                               ),
 
-                              // Кнопки управления — ПОДНЯТЫ (ты ставил top: 10)
+                              // кнопки управления — подняты
                               Positioned(
-                                top: 10, // ← как просил
+                                top: 10,
                                 left: 0,
                                 right: 0,
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    PressableSquare(
-                                      size: 55,
-                                      onTap: () { /* prev */ },
-                                      child: const Icon(Icons.skip_previous,
-                                          color: Colors.black, size: 55),
-                                    ),
-                                    const SizedBox(width: 20),
-                                    PressableSquare(
-                                      size: 75,
-                                      onTap: () => setState(() => playing = !playing),
-                                      child: Icon(
-                                        playing ? Icons.pause : Icons.play_arrow,
-                                        color: Colors.black,
-                                        size: 72, // не больше контейнера
+                                    // PREV (удержание — мелкая перемотка)
+                                    GestureDetector(
+                                      onLongPressStart: (_) => _startHoldSeek(forward: false),
+                                      onLongPressEnd: (_) => _stopHoldSeek(),
+                                      child: PressableSquare(
+                                        size: 55,
+                                        onTap: _prevTrack,
+                                        child: const Icon(Icons.skip_previous,
+                                            color: Colors.black, size: 55),
                                       ),
                                     ),
                                     const SizedBox(width: 20),
+                                    // PLAY/PAUSE
                                     PressableSquare(
-                                      size: 55,
-                                      onTap: () { /* next */ },
-                                      child: const Icon(Icons.skip_next,
-                                          color: Colors.black, size: 55),
+                                      size: 75,
+                                      onTap: _togglePlay,
+                                      child: Icon(
+                                        playing ? Icons.pause : Icons.play_arrow,
+                                        color: Colors.black,
+                                        size: 72,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 20),
+                                    // NEXT (удержание — мелкая перемотка)
+                                    GestureDetector(
+                                      onLongPressStart: (_) => _startHoldSeek(forward: true),
+                                      onLongPressEnd: (_) => _stopHoldSeek(),
+                                      child: PressableSquare(
+                                        size: 55,
+                                        onTap: _nextTrack,
+                                        child: const Icon(Icons.skip_next,
+                                            color: Colors.black, size: 55),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -511,7 +770,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                   ),
 
-                  // ======= НИЖНИЙ МИНИМАЛИСТИЧНЫЙ РЯД (SVG, без фона) =======
+                  // нижний ряд (SVG)
                   SafeArea(
                     top: false,
                     child: Padding(
@@ -564,22 +823,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
 
-          // ======= БУРГЕР СПРАВА СНИЗУ (над навигацией) =======
+          // бургер
           Positioned(
             right: 24,
-            bottom: 105, // оставь как удобно
-            child: PressableSquare(
-              size: 52,
-              color: Colors
-                  .transparent, // ← белый фон убрали (прозрачный фон, хит-таргет остался 52x52)
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                // TODO: открыть список следующих треков (позже: showModalBottomSheet(...))
-              },
-              child: const Icon(
-                Icons.menu,
-                color: Color(0x66FFFFFF),
-                size: 32,
+            bottom: 105,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) => setState(() => burgerPressed = true),
+              onTapUp: (_) => setState(() => burgerPressed = false),
+              onTapCancel: () => setState(() => burgerPressed = false),
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Center(
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: burgerPressed ? 1 : 0),
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, t, _) => Icon(
+                      Icons.menu,
+                      color: Color.lerp(const Color(0x66FFFFFF), Colors.white, t)!,
+                      size: 32,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
