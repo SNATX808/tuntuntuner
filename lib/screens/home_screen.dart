@@ -3,7 +3,40 @@ import '../models/track.dart';
 import '../theme.dart';
 import 'player_screen.dart';
 import 'profile_screen.dart';
-import '../widgets/bottom_svg_icon.dart';
+import '../widgets/bottom_svg_icon.dart ';
+
+class SearchScreen extends StatelessWidget {
+  const SearchScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text('Страница поиска', style: TextStyle(color: Colors.white)),
+    );
+  }
+}
+
+class UploadScreen extends StatelessWidget {
+  const UploadScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text('Страница загрузки треков', style: TextStyle(color: Colors.white)),
+    );
+  }
+}
+
+class MessagesScreen extends StatelessWidget {
+  const MessagesScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text('Страница сообщений', style: TextStyle(color: Colors.white)),
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -47,20 +80,29 @@ class _HomeScreenState extends State<HomeScreen> {
     Widget page;
     switch (bottomSelected) {
       case 0:
-        page = PlayerScreen(tracks: tracks); // главный плеер
+        page = PlayerScreen(tracks: tracks); // Главная
+        break;
+      case 1:
+        page = const SearchScreen(); // Поиск
+        break;
+      case 2:
+        page = const UploadScreen(); // Плюс/загрузка
         break;
       case 3:
-        page = ProfileScreen(allTracks: tracks); // профиль с лайками
+        page = const MessagesScreen(); // Сообщения
+        break;
+      case 4:
+        page = ProfileScreen(allTracks: tracks); // Профиль
         break;
       default:
-        page = const Center(child: Text('Пока пусто', style: TextStyle(color: Colors.white)));
+        page = const SizedBox();
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Positioned.fill(child: page),
-          // Нижняя навигация
           SafeArea(
             top: false,
             child: Align(
@@ -68,22 +110,18 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     BottomSvgIcon(
                       asset: 'assets/icons/home_icon.svg',
                       selected: bottomSelected == 0,
-                      unselectedColor: const Color(0x66FFFFFF),
                       onTap: () => setState(() => bottomSelected = 0),
                     ),
-                    const SizedBox(width: 32),
                     BottomSvgIcon(
                       asset: 'assets/icons/search_icon.svg',
                       selected: bottomSelected == 1,
-                      unselectedColor: const Color(0x66FFFFFF),
                       onTap: () => setState(() => bottomSelected = 1),
                     ),
-                    const SizedBox(width: 32),
                     GestureDetector(
                       onTap: () => setState(() => bottomSelected = 2),
                       child: Container(
@@ -95,19 +133,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 32),
                     BottomSvgIcon(
                       asset: 'assets/icons/messages_icon.svg',
-                      selected: bottomSelected == 2,
-                      unselectedColor: const Color(0x66FFFFFF),
-                      onTap: () => setState(() => bottomSelected = 2),
+                      selected: bottomSelected == 3,
+                      onTap: () => setState(() => bottomSelected = 3),
                     ),
-                    const SizedBox(width: 32),
                     BottomSvgIcon(
                       asset: 'assets/icons/profile_icon.svg',
-                      selected: bottomSelected == 3,
-                      unselectedColor: const Color(0x66FFFFFF),
-                      onTap: () => setState(() => bottomSelected = 3),
+                      selected: bottomSelected == 4,
+                      onTap: () => setState(() => bottomSelected = 4),
                     ),
                   ],
                 ),

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const bgTop = Color(0xFF420909);
-  static const accent = Color(0xFFE53935);
+  static const bgTop = Color(0xFFFFFFFF);
+  static const accent = Color(0xFFFFFFFF);
   static const textPri = Colors.white;
   static const textSec = Color(0xB3FFFFFF);
 

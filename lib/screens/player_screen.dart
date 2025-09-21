@@ -392,7 +392,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       : Icons.favorite_border,
                                 ),
                                 color: liked
-                                    ? AppTheme.accent
+                                    ? Colors.red
                                     : AppTheme.textPri,
                               ),
                             ),
