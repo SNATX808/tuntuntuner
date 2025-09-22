@@ -77,32 +77,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Widget page;
-    switch (bottomSelected) {
-      case 0:
-        page = PlayerScreen(tracks: tracks); // Главная
-        break;
-      case 1:
-        page = const SearchScreen(); // Поиск
-        break;
-      case 2:
-        page = const UploadScreen(); // Плюс/загрузка
-        break;
-      case 3:
-        page = const MessagesScreen(); // Сообщения
-        break;
-      case 4:
-        page = ProfileScreen(allTracks: tracks); // Профиль
-        break;
-      default:
-        page = const SizedBox();
-    }
-
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          Positioned.fill(child: page),
+          // ====== IndexedStack вместо switch ======
+          Positioned.fill(
+            child: IndexedStack(
+              index: bottomSelected,
+              children: [
+                PlayerScreen(tracks: tracks),          // Главная
+                const SearchScreen(),                  // Поиск
+                const UploadScreen(),                  // Загрузка
+                const MessagesScreen(),                // Сообщения
+                ProfileScreen(allTracks: tracks),      // Профиль
+              ],
+            ),
+          ),
+
+          // ====== Нижняя навигация ======
           SafeArea(
             top: false,
             child: Align(

@@ -9,9 +9,10 @@ import '../models/track.dart';
 import '../widgets/pressable_square.dart';
 import '../widgets/rect_slider.dart';
 import '../widgets/bottom_svg_icon.dart';
+import '../track_state.dart'; // <-- для глобального цвета
 
 class PlayerScreen extends StatefulWidget {
-  final List<Track> tracks; // теперь можно передавать треки
+  final List<Track> tracks;
 
   const PlayerScreen({super.key, required this.tracks});
 
@@ -40,7 +41,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    tracks = widget.tracks; // берём треки из конструктора
+    tracks = widget.tracks;
     _initAudio();
     _loadLike();
   }
@@ -61,8 +62,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
 
     final initialDur = await _player.setAudioSource(_playlist!);
-    if (mounted && initialDur != null)
-      setState(() => total = initialDur.inSeconds.toDouble());
+    if (mounted && initialDur != null) setState(() => total = initialDur.inSeconds.toDouble());
 
     await _player.setLoopMode(LoopMode.all);
 
@@ -137,9 +137,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _seekBy(Duration delta) {
     final now = _player.position + delta;
     final maxD = Duration(seconds: total.toInt());
-    final target = now < Duration.zero
-        ? Duration.zero
-        : (now > maxD ? maxD : now);
+    final target = now < Duration.zero ? Duration.zero : (now > maxD ? maxD : now);
     _player.seek(target);
   }
 
@@ -195,17 +193,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
         maximumColorCount: 20,
       );
 
-      final color =
-          palette.dominantColor?.color ??
+      final color = palette.dominantColor?.color ??
           palette.vibrantColor?.color ??
           palette.darkVibrantColor?.color ??
           palette.lightVibrantColor?.color ??
           palette.mutedColor?.color ??
           AppTheme.bgTop;
 
-      if (mounted) setState(() => dominant = color);
+      if (mounted) {
+        setState(() => dominant = color);           // локальный градиент для PlayerScreen
+        TrackState.dominantColor.value = color;     // глобальный цвет для ProfileScreen
+      }
     } catch (_) {
-      if (mounted) setState(() => dominant = AppTheme.bgTop);
+      if (mounted) {
+        setState(() => dominant = AppTheme.bgTop);
+        TrackState.dominantColor.value = AppTheme.bgTop;
+      }
     }
   }
 
@@ -217,9 +220,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Color lighten(Color c, [double amount = 0.15]) {
     final hsl = HSLColor.fromColor(c);
-    return hsl
-        .withLightness((hsl.lightness + amount).clamp(0.0, 1.0))
-        .toColor();
+    return hsl.withLightness((hsl.lightness + amount).clamp(0.0, 1.0)).toColor();
   }
 
   @override
@@ -317,9 +318,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                         borderRadius: BorderRadius.circular(20),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.5,
-                                            ),
+                                            color: Colors.black.withOpacity(0.5),
                                             blurRadius: 12,
                                             offset: const Offset(0, 0),
                                           ),
@@ -330,15 +329,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                         child: Image.asset(
                                           track.coverAsset,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (ctx, err, st) =>
-                                              Container(
-                                                color: Colors.white12,
-                                                alignment: Alignment.center,
-                                                child: const Text(
-                                                  'Нет изображения',
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ),
+                                          errorBuilder: (ctx, err, st) => Container(
+                                            color: Colors.white12,
+                                            alignment: Alignment.center,
+                                            child: const Text(
+                                              'Нет изображения',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -387,13 +385,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   await _saveLike(v);
                                 },
                                 icon: Icon(
-                                  liked
-                                      ? Icons.favorite
-                                      : Icons.favorite_border,
+                                  liked ? Icons.favorite : Icons.favorite_border,
                                 ),
-                                color: liked
-                                    ? Colors.red
-                                    : AppTheme.textPri,
+                                color: liked ? Colors.red : AppTheme.textPri,
                               ),
                             ),
                           ],
@@ -419,8 +413,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                         child: SliderTheme(
                                           data: SliderTheme.of(context).copyWith(
                                             trackHeight: 5,
-                                            trackShape:
-                                                const RectSliderTrackShape(),
+                                            trackShape: const RectSliderTrackShape(),
                                             activeTrackColor: Colors.white,
                                             inactiveTrackColor: Colors.white54,
                                             thumbColor: Colors.white,
@@ -428,18 +421,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                               thumbWidth: 14,
                                               thumbHeight: 14,
                                             ),
-                                            overlayShape:
-                                                SliderComponentShape.noOverlay,
+                                            overlayShape: SliderComponentShape.noOverlay,
                                           ),
                                           child: Slider(
-                                            value:
-                                                ((_dragPos ?? pos).isFinite
-                                                        ? (_dragPos ?? pos)
-                                                        : 0.0)
-                                                    .clamp(
-                                                      0.0,
-                                                      total > 0 ? total : 1.0,
-                                                    ),
+                                            value: ((_dragPos ?? pos).isFinite ? (_dragPos ?? pos) : 0.0)
+                                                .clamp(0.0, total > 0 ? total : 1.0),
                                             min: 0,
                                             max: total > 0 ? total : 1,
                                             onChangeStart: (_) {
@@ -449,32 +435,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                             },
                                             onChanged: total > 0
                                                 ? (v) {
-                                                    final clamped = v.clamp(
-                                                      0.0,
-                                                      total,
-                                                    );
-                                                    setState(
-                                                      () => _dragPos = clamped,
-                                                    );
-                                                    _seekDebounced(
-                                                      Duration(
-                                                        seconds: clamped
-                                                            .round(),
-                                                      ),
-                                                    );
-                                                  }
+                                              final clamped = v.clamp(0.0, total);
+                                              setState(() => _dragPos = clamped);
+                                              _seekDebounced(Duration(seconds: clamped.round()));
+                                            }
                                                 : null,
                                             onChangeEnd: (v) {
                                               _seekDebounce?.cancel();
-                                              final clamped = v.clamp(
-                                                0.0,
-                                                total,
-                                              );
-                                              _player.seek(
-                                                Duration(
-                                                  seconds: clamped.round(),
-                                                ),
-                                              );
+                                              final clamped = v.clamp(0.0, total);
+                                              _player.seek(Duration(seconds: clamped.round()));
                                               _dragPos = null;
                                               _isDragging = false;
                                             },
@@ -484,24 +453,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       FractionallySizedBox(
                                         widthFactor: 0.9,
                                         child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
                                             Text(
                                               _fmt(pos),
                                               style: const TextStyle(
-                                                fontSize: 20,
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                                  fontSize: 20,
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold),
                                             ),
                                             Text(
                                               _fmt(total),
                                               style: const TextStyle(
-                                                fontSize: 20,
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                                  fontSize: 20,
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold),
                                             ),
                                           ],
                                         ),
@@ -520,8 +486,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     GestureDetector(
-                                      onLongPressStart: (_) =>
-                                          _startHoldSeek(forward: false),
+                                      onLongPressStart: (_) => _startHoldSeek(forward: false),
                                       onLongPressEnd: (_) => _stopHoldSeek(),
                                       child: PressableSquare(
                                         size: 55,
@@ -538,17 +503,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                       size: 75,
                                       onTap: _togglePlay,
                                       child: Icon(
-                                        playing
-                                            ? Icons.pause
-                                            : Icons.play_arrow,
+                                        playing ? Icons.pause : Icons.play_arrow,
                                         color: Colors.black,
                                         size: 72,
                                       ),
                                     ),
                                     const SizedBox(width: 20),
                                     GestureDetector(
-                                      onLongPressStart: (_) =>
-                                          _startHoldSeek(forward: true),
+                                      onLongPressStart: (_) => _startHoldSeek(forward: true),
                                       onLongPressEnd: (_) => _stopHoldSeek(),
                                       child: PressableSquare(
                                         size: 55,

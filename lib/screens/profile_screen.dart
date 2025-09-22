@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/track.dart';
-import '../theme.dart';
+import '../track_state.dart'; // <-- добавлено
 
 class ProfileScreen extends StatefulWidget {
   final List<Track> allTracks;
@@ -50,28 +50,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildHeader() {
-    final initials = widget.allTracks.isNotEmpty
-        ? (widget.allTracks.first.artist.isNotEmpty ? widget.allTracks.first.artist[0] : 'U')
-        : 'U';
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      padding: const EdgeInsets.only(top: 100, left: 24, right: 16, bottom: 24),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: Colors.white12,
-            child: Text(initials, style: const TextStyle(color: Colors.white, fontSize: 22)),
+          Container(
+            width: 100,
+            height: 100,
+            color: Colors.white,
+            child: const Icon(Icons.favorite, color: Colors.black, size: 50),
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Профиль', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text('${likedTracks.length} лайков', style: const TextStyle(color: Colors.white70)),
-              ],
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Понравившиеся треки',
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text('${likedTracks.length} лайков', style: const TextStyle(color: Colors.white70)),
+            ],
           ),
         ],
       ),
@@ -80,125 +79,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFFF0000),
-        title: const Text('Профиль', style: TextStyle(color: Colors.white)),
-        elevation: 0,
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFFFF0000), Colors.black],
-            stops: [0.0, 0.8],
-          ),
-        ),
-        child: loading
-            ? const Center(child: CircularProgressIndicator())
-            : RefreshIndicator(
-          onRefresh: _loadLikedTracks,
-          child: likedTracks.isEmpty
-              ? ListView(
-            children: [
-              _buildHeader(),
-              const SizedBox(height: 80),
-              const Center(
-                child: Text(
-                  'Нет лайкнутых треков',
-                  style: TextStyle(color: Colors.white70, fontSize: 18),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white12),
-                  child: const Text('Вернуться к трекам', style: TextStyle(color: Colors.white)),
-                ),
-              )
-            ],
-          )
-              : ListView.separated(
-            padding: EdgeInsets.zero,
-            itemCount: likedTracks.length + 1,
-            separatorBuilder: (_, __) => const SizedBox(height: 10), // расстояние между треками фиксированное
-            itemBuilder: (context, index) {
-              if (index == 0) return _buildHeader(); // первый элемент — шапка
-              final track = likedTracks[index - 1];
+    return ValueListenableBuilder<Color>(
+      valueListenable: TrackState.dominantColor,
+      builder: (context, dominant, _) {
+        final gradientTop = HSLColor.fromColor(dominant)
+            .withLightness((HSLColor.fromColor(dominant).lightness + 0.15).clamp(0.0, 1.0))
+            .toColor();
 
-              return Container(
-                height: 64, // фиксированная высота трека
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    // обложка с тенью
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black45,
-                            offset: Offset(0, 0),
-                            blurRadius: 5,
+        return Scaffold(
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [gradientTop, Colors.black],
+                stops: const [0.0, 0.8],
+              ),
+            ),
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+              onRefresh: _loadLikedTracks,
+              child: likedTracks.isEmpty
+                  ? ListView(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 80),
+                  const Center(
+                    child: Text(
+                      'Нет лайкнутых треков',
+                      style: TextStyle(color: Colors.white70, fontSize: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              )
+                  : ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: likedTracks.length + 1,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  if (index == 0) return _buildHeader();
+                  final track = likedTracks[index - 1];
+
+                  return Container(
+                    height: 64,
+                    padding: const EdgeInsets.only(left: 24, right: 16),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black45,
+                                offset: Offset(0, 0),
+                                blurRadius: 5,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          track.coverAsset,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: Colors.white12,
-                            child: const Icon(Icons.music_note, color: Colors.white30),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.asset(
+                              track.coverAsset,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.white12,
+                                child: const Icon(Icons.music_note, color: Colors.white30),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // текст с независимым позиционированием через Transform
-                    Expanded(
-                      child: Stack(
-                        children: [
-                          // Название трека
-                          Transform.translate(
-                            offset: const Offset(5, -12), // двигаешь вверх/вниз
-                            child: Text(
-                              track.title,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 24),
-                            ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Transform.translate(
+                                offset: const Offset(5, -12),
+                                child: Text(
+                                  track.title,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 24),
+                                ),
+                              ),
+                              Transform.translate(
+                                offset: const Offset(5, 18),
+                                child: Text(
+                                  track.artist,
+                                  style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 18),
+                                ),
+                              ),
+                            ],
                           ),
-                          // Артист
-                          Transform.translate(
-                            offset: const Offset(5, 18), // двигаешь вверх/вниз
-                            child: Text(
-                              track.artist,
-                              style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 18),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          onPressed: () => _toggleLike(track),
+                          icon: const Icon(Icons.favorite, color: Colors.redAccent),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: () => _toggleLike(track),
-                      icon: const Icon(Icons.favorite, color: Colors.redAccent),
-                    ),
-                  ],
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
